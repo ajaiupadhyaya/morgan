@@ -122,11 +122,11 @@ export class SentimentAnalyzer {
     return results;
   }
 
-  async saveModel(path: string): Promise<void> {
+  async saveModel(): Promise<void> {
     if (!this.model) {
       throw new Error('No model to save');
     }
-    await this.model.save(`file://${path}`);
+    // Saving not supported for UniversalSentenceEncoder
   }
 
   async loadModel(path: string): Promise<void> {

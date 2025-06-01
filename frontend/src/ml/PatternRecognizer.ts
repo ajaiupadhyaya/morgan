@@ -76,14 +76,6 @@ export class PatternRecognizer {
     );
   }
 
-  private denormalizeData(data: number[][]): number[][] {
-    return data.map(row =>
-      row.map(
-        value => value * (this.scaler.max - this.scaler.min) + this.scaler.min
-      )
-    );
-  }
-
   private prepareData(data: MarketData[]): tf.Tensor {
     const sequences: number[][] = [];
     for (let i = 0; i <= data.length - this.config.windowSize; i++) {
@@ -161,74 +153,6 @@ export class PatternRecognizer {
     predictions.dispose();
 
     return results;
-  }
-
-  private validatePattern(data: MarketData[], pattern: string): boolean {
-    // Implement specific pattern validation rules
-    switch (pattern) {
-      case 'double_top':
-        return this.validateDoubleTop(data);
-      case 'double_bottom':
-        return this.validateDoubleBottom(data);
-      case 'head_and_shoulders':
-        return this.validateHeadAndShoulders(data);
-      case 'triangle':
-        return this.validateTriangle(data);
-      default:
-        return false;
-    }
-  }
-
-  private validateDoubleTop(data: MarketData[]): boolean {
-    if (data.length < 3) return false;
-
-    const highs = data.map(d => d.high);
-    const firstTop = Math.max(...highs.slice(0, Math.floor(highs.length / 2)));
-    const secondTop = Math.max(...highs.slice(Math.floor(highs.length / 2)));
-
-    const tolerance = 0.02; // 2% tolerance
-    return Math.abs(firstTop - secondTop) / firstTop <= tolerance;
-  }
-
-  private validateDoubleBottom(data: MarketData[]): boolean {
-    if (data.length < 3) return false;
-
-    const lows = data.map(d => d.low);
-    const firstBottom = Math.min(...lows.slice(0, Math.floor(lows.length / 2)));
-    const secondBottom = Math.min(...lows.slice(Math.floor(lows.length / 2)));
-
-    const tolerance = 0.02; // 2% tolerance
-    return Math.abs(firstBottom - secondBottom) / firstBottom <= tolerance;
-  }
-
-  private validateHeadAndShoulders(data: MarketData[]): boolean {
-    if (data.length < 5) return false;
-
-    const highs = data.map(d => d.high);
-    const midPoint = Math.floor(highs.length / 2);
-    const leftShoulder = Math.max(...highs.slice(0, midPoint - 1));
-    const head = Math.max(...highs.slice(midPoint - 1, midPoint + 2));
-    const rightShoulder = Math.max(...highs.slice(midPoint + 2));
-
-    const tolerance = 0.05; // 5% tolerance
-    return (
-      Math.abs(leftShoulder - rightShoulder) / leftShoulder <= tolerance &&
-      head > leftShoulder &&
-      head > rightShoulder
-    );
-  }
-
-  private validateTriangle(data: MarketData[]): boolean {
-    if (data.length < 4) return false;
-
-    const highs = data.map(d => d.high);
-    const lows = data.map(d => d.low);
-
-    // Check for converging trend lines
-    const highSlope = (highs[highs.length - 1] - highs[0]) / highs.length;
-    const lowSlope = (lows[lows.length - 1] - lows[0]) / lows.length;
-
-    return highSlope < 0 && lowSlope > 0;
   }
 
   async saveModel(path: string): Promise<void> {
