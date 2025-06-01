@@ -3,17 +3,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from typing import List, Optional
 import uvicorn
+from app.api import auth, trading, analytics, settings
+from app.core.config import settings as app_settings
 
 app = FastAPI(
-    title="Vuoksi AI Trader",
-    description="AI-powered algorithmic trading platform",
+    title="Morgan Trading Platform",
+    description="Advanced Quantitative Trading Platform",
     version="1.0.0"
 )
 
 # CORS middleware configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=[app_settings.FRONTEND_URL],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -22,10 +24,16 @@ app.add_middleware(
 # OAuth2 scheme for token authentication
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
+# Include routers
+app.include_router(auth.router, prefix="/api", tags=["auth"])
+app.include_router(trading.router, prefix="/api", tags=["trading"])
+app.include_router(analytics.router, prefix="/api", tags=["analytics"])
+app.include_router(settings.router, prefix="/api", tags=["settings"])
+
 @app.get("/")
 async def root():
     return {
-        "message": "Welcome to Vuoksi AI Trader API",
+        "message": "Welcome to Morgan Trading Platform API",
         "status": "operational",
         "version": "1.0.0"
     }
