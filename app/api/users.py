@@ -1,110 +1,87 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from typing import Any
-from datetime import timedelta
+from pydantic import BaseModel, Field # Added for request body validation
+from typing import Optional, Any
+import logging
 
-from app.core.auth import (
-    authenticate_user,
-    create_access_token,
-    get_password_hash,
-    get_current_active_user
-)
-from app.core.config import settings
+# Assuming these imports are from your refined security module
+from app.core.security import get_current_active_user
 from app.db.session import get_db
-from app.models.models import User
+from app.models.user import User # Assuming User model has portfolio_size, risk_tolerance
 
-router = APIRouter()
+logger = logging.getLogger(__name__)
 
-@router.post("/register")
-async def register_user(
-    email: str,
-    password: str,
-    db: Session = Depends(get_db)
-) -> Any:
-    """Register a new user"""
-    # Check if user already exists
-    db_user = db.query(User).filter(User.email == email).first()
-    if db_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
-        )
-    
-    # Create new user
-    hashed_password = get_password_hash(password)
-    db_user = User(
-        email=email,
-        hashed_password=hashed_password,
-        is_active=True
-    )
-    
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    
-    return {"message": "User created successfully"}
+router = APIRouter(
+    prefix="/users", # Standard prefix for user-related, non-auth endpoints
+    tags=["Users"]
+)
 
-@router.post("/token")
-async def login_for_access_token(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db)
-) -> Any:
-    """Get access token for user"""
-    user = authenticate_user(db, form_data.username, form_data.password)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user.email}, expires_delta=access_token_expires
-    )
-    
-    return {
-        "access_token": access_token,
-        "token_type": "bearer"
-    }
+# --- Pydantic Models for Request/Response ---
+class UserPreferencesUpdate(BaseModel):
+    """Schema for updating user preferences."""
+    # Ensure these field names match your User model attributes
+    portfolio_size: Optional[float] = Field(None, gt=0, description="User's preferred portfolio size for simulation or display.")
+    risk_tolerance: Optional[float] = Field(None, ge=0, le=1, description="User's risk tolerance (e.g., a value between 0 and 1).")
+    full_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    # Add other updatable, non-sensitive preferences here
 
-@router.get("/me")
-async def read_users_me(
-    current_user: User = Depends(get_current_active_user)
-) -> Any:
-    """Get current user information"""
-    return {
-        "email": current_user.email,
-        "is_active": current_user.is_active,
-        "created_at": current_user.created_at
-    }
+class UserPreferencesResponse(BaseModel):
+    """Response schema for user preferences."""
+    email: str
+    full_name: Optional[str] = None
+    portfolio_size: Optional[float] = None
+    risk_tolerance: Optional[float] = None
+    # Include other relevant fields that are safe to return
 
-@router.put("/me")
-async def update_user(
-    alpaca_api_key: str = None,
-    alpaca_secret_key: str = None,
-    portfolio_size: float = None,
-    risk_tolerance: float = None,
+    class Config:
+        from_attributes = True
+
+
+@router.put("/me/preferences", response_model=UserPreferencesResponse, summary="Update Current User Preferences")
+async def update_user_preferences(
+    preferences_in: UserPreferencesUpdate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
-) -> Any:
-    """Update user settings"""
-    if alpaca_api_key:
-        current_user.alpaca_api_key = alpaca_api_key
-    if alpaca_secret_key:
-        current_user.alpaca_secret_key = alpaca_secret_key
-    if portfolio_size:
-        current_user.portfolio_size = portfolio_size
-    if risk_tolerance:
-        current_user.risk_tolerance = risk_tolerance
+) -> UserPreferencesResponse:
+    """
+    Update non-sensitive preferences for the currently authenticated user.
+    API keys should be managed via /auth/api-keys/alpaca endpoint.
+    """
+    logger.info(f"Updating preferences for user: {current_user.email}")
+    update_data = preferences_in.model_dump(exclude_unset=True)
+    updated_fields_count = 0
+
+    if "portfolio_size" in update_data and update_data["portfolio_size"] is not None:
+        # Add any validation specific to portfolio_size if needed
+        current_user.portfolio_size = update_data["portfolio_size"]
+        updated_fields_count +=1
     
-    db.commit()
-    db.refresh(current_user)
-    
-    return {
-        "message": "User settings updated successfully",
-        "email": current_user.email,
-        "portfolio_size": current_user.portfolio_size,
-        "risk_tolerance": current_user.risk_tolerance
-    } 
+    if "risk_tolerance" in update_data and update_data["risk_tolerance"] is not None:
+        # Add any validation specific to risk_tolerance if needed
+        current_user.risk_tolerance = update_data["risk_tolerance"]
+        updated_fields_count += 1
+
+    if "full_name" in update_data and update_data["full_name"] is not None:
+        current_user.full_name = update_data["full_name"]
+        updated_fields_count += 1
+
+    # Add other preference updates here
+
+    if updated_fields_count > 0:
+        try:
+            db.commit()
+            db.refresh(current_user)
+            logger.info(f"Preferences updated successfully for user: {current_user.email}")
+        except Exception as e: # Catch potential DB errors
+            db.rollback()
+            logger.error(f"Database error updating preferences for {current_user.email}: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not update preferences due to a database error."
+            )
+    else:
+        logger.info(f"No preference data provided to update for user: {current_user.email}")
+        # Optionally, you could return a 304 Not Modified or a message indicating no changes
+        # For simplicity, we'll return the current state.
+
+    return UserPreferencesResponse.model_validate(current_user)
