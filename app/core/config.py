@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", str(60 * 24 * 8)))  # 8 days
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+
+    # In class Settings(BaseSettings):
+    MIN_PASSWORD_LENGTH: int = int(os.getenv("MIN_PASSWORD_LENGTH", "10")) # Example
     
     TWO_FACTOR_TEMP_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("TWO_FACTOR_TEMP_TOKEN_EXPIRE_MINUTES", "5")) # Expiry for temporary 2FA tokens
 

@@ -7,6 +7,8 @@ from typing import Any
 import logging
 import re
 from pydantic import BaseModel, validator
+from fastapi.security import OAuth2PasswordBearer # If not already there
+
 
 from app.core import security
 from app.core.config import settings
@@ -365,16 +367,21 @@ async def disable_two_factor_auth(
             detail="Failed to disable 2FA"
         )
 
-@router.post("/logout")
+# Potentially define oauth2_scheme at router level if needed, or use the one from security.py
+# This matches the one in security.py, which should be used consistently
+oauth2_scheme_for_logout = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/token")
+
+@router.post("/logout", summary="Logout User")
 async def logout(
-    current_user: User = Depends(security.get_current_user),
-) -> dict:
-    """
-    Logout user (invalidate token if using token blacklist).
-    """
-    logger.info(f"User logout: {current_user.email}")
-    
-    # If you implement token blacklisting, add token to blacklist here
-    # security.blacklist_token(token)
-    
-    return {"message": "Logged out successfully"}
+    current_user: User = Depends(security.get_current_active_user), # Validates active user
+    token: str = Depends(oauth2_scheme_for_logout) # Gets the raw token
+) -> Dict[str, str]:
+    logger.info(f"User logout initiated for: {current_user.email}")
+    success = security.blacklist_token(token) # Pass raw token for simple blacklist
+    if success:
+        logger.info(f"Token for user {current_user.email} submitted for blacklisting.")
+        return {"message": "Logout successful. Token has been invalidated."}
+    else:
+        logger.warning(f"Token blacklisting failed for user {current_user.email}. Client should still discard token.")
+        # Even if blacklisting fails (e.g., Redis down), client should still treat as logout
+        return {"message": "Logout processed. Client should discard token."}
