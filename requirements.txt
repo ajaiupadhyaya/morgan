@@ -23,4 +23,5 @@ yfinance==0.2.31
 polygon-api-client==1.12.3
 celery==5.3.6
 mlflow==2.8.1
-optuna==3.4.0 
+optuna==3.4.0
+pyotp==2.6.0
